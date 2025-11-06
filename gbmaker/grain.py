@@ -97,7 +97,7 @@ class GrainGenerator(SlabGenerator):
         the shift is fractional (Pull request to change this?).
         """
         return Grain.from_oriented_unit_cell(
-            self.oriented_unit_cell.copy(),
+            self.oriented_unit_cell,
             self.miller_index.copy(),
             shift,
             hkl_spacing=self.parent.lattice.d_hkl(self.miller_index),
@@ -176,18 +176,17 @@ class GrainGenerator(SlabGenerator):
         # get the distance between each cluster
         shifts = [(c_shifts[-(i + 1)] + c_shifts[-i]) * 0.5 for i in range(n_clusters)]
         # extra shift for first to last (or only) that needs folding into unit cell
-        print(np.array(shifts))
-        shifts[0] += 0.5
-        if shifts[0] >= 1.0:
-            shifts[0] -= 1
-        if shifts[0] > shifts[1]:
-            s = shifts.pop(0)
-            for i, shift in enumerate(shifts):
-                if s < shift:
-                    shifts.insert(s, i)
-                    return shifts
-            shifts.append(s)
-        print(np.array(shifts))
+        if len(shifts) > 1:
+            shifts[0] += 0.5
+            if shifts[0] >= 1.0:
+                shifts[0] -= 1
+            if shifts[0] > shifts[1]:
+                s = shifts.pop(0)
+                for i, shift in enumerate(shifts):
+                    if s < shift:
+                        shifts.insert(s, i)
+                        return shifts
+                shifts.append(s)
         return shifts
 
     def _get_c_ranges(self, bonds):
@@ -755,6 +754,20 @@ class Grain:
         rotated so that the ab-plane lies in the xy-plane and that the a-vector
         runs parallel to the x-direction.
         """
+
+        def symmetrize_cell(cell: Structure) -> Structure:
+            lattice = np.round(cell.lattice.matrix, 12)
+            return Structure(
+                lattice,
+                cell.species_and_occu,
+                np.mod(np.round(cell.frac_coords, 12), 1),
+                ouc.charge,
+                False,
+                False,
+                False,
+                cell.site_properties,
+            )
+
         # try and orthogonalise the structure
         ouc = oriented_unit_cell.copy()
         if "bulk_equivalent" not in ouc.site_properties:
@@ -767,6 +780,7 @@ class Grain:
         R = rotation(np.cross(*ouc.lattice.matrix[:2]))
         symmop = SymmOp.from_rotation_and_translation(rotation_matrix=R)
         ouc.apply_operation(symmop)
+        ouc = symmetrize_cell(ouc)
         # then rotate the oriented unit cell so that the a-vector lies along x
         theta = np.arccos(ouc.lattice.matrix[0, 0] / ouc.lattice.a)
         theta *= -1 if ouc.lattice.matrix[0, 1] > 0 else 1
@@ -776,6 +790,7 @@ class Grain:
             True,
         )
         ouc.apply_operation(symmop)
+        ouc = symmetrize_cell(ouc)
         ouc = orthogonalise(ouc)
         origin_shift = ouc.lattice.get_cartesian_coords([0, 0, shift])
         ouc.translate_sites(
@@ -793,17 +808,7 @@ class Grain:
             frac_coords=True,
         )
         # lets try and remove the floating point error from the structure
-        lattice = np.round(ouc.lattice.matrix, 15)
-        ouc = Structure(
-            lattice,
-            ouc.species_and_occu,
-            np.mod(np.round(ouc.frac_coords, 15), 1),
-            ouc.charge,
-            False,
-            False,
-            False,
-            ouc.site_properties,
-        )
+        ouc = symmetrize_cell(ouc)
         grain = cls(
             ouc,
             miller_index,
