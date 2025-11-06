@@ -755,12 +755,16 @@ class Grain:
         runs parallel to the x-direction.
         """
 
-        def symmetrize_cell(cell: Structure) -> Structure:
+        def symmetrize_cell(cell: Structure, invert_c: bool = False) -> Structure:
             lattice = np.round(cell.lattice.matrix, 12)
+            coords = cell.frac_coords
+            if invert_c:
+                lattice[2] *= -1
+                coords[:, 2] *= -1
             return Structure(
                 lattice,
                 cell.species_and_occu,
-                np.mod(np.round(cell.frac_coords, 12), 1),
+                np.mod(np.round(coords, 12), 1),
                 ouc.charge,
                 False,
                 False,
@@ -777,10 +781,12 @@ class Grain:
                 sg.get_symmetry_dataset()["equivalent_atoms"].tolist(),
             )
         # first rotate the oriented unit cell so that the miller index is along z
+        print(f"before rotate:\n\n{ouc=}")
         R = rotation(np.cross(*ouc.lattice.matrix[:2]))
         symmop = SymmOp.from_rotation_and_translation(rotation_matrix=R)
         ouc.apply_operation(symmop)
-        ouc = symmetrize_cell(ouc)
+        print(f"after rotate:\n\n{ouc=}")
+        ouc = symmetrize_cell(ouc, ouc.lattice.matrix[2, 2] < 0)
         # then rotate the oriented unit cell so that the a-vector lies along x
         theta = np.arccos(ouc.lattice.matrix[0, 0] / ouc.lattice.a)
         theta *= -1 if ouc.lattice.matrix[0, 1] > 0 else 1
@@ -800,6 +806,7 @@ class Grain:
             frac_coords=False,
         )
         ouc.sort(key=lambda site: (round(site.z, 8), site.bulk_equivalent))
+        print(f"after sort:\n\n{ouc=}")
         origin_shift = ouc.frac_coords[0]
         ouc.translate_sites(
             indices=range(len(oriented_unit_cell)),
@@ -807,6 +814,7 @@ class Grain:
             to_unit_cell=False,
             frac_coords=True,
         )
+        print(f"after shift:\n\n{ouc=}")
         # lets try and remove the floating point error from the structure
         ouc = symmetrize_cell(ouc)
         grain = cls(
