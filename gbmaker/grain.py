@@ -232,6 +232,7 @@ class Grain:
         hkl_spacing: Optional[float] = None,
         bonds: Optional[Dict[Sequence[SpeciesLike], float]] = None,
         orthogonal_c: bool = False,
+        vacuum: float = 5.0,
     ):
         """Initialise the grain from an oriented unit cell and Structure kwargs.
 
@@ -248,6 +249,7 @@ class Grain:
         bonds: A dictionary of pairs of atomic species and their maximum bond
                length for repairing the surfaces of grains.
         orthogonal_c: Whether to orthogonalise the c-vector.
+        vacuum: How much vacuum to add when displaying the grain.
         """
         self.miller_index = np.array(miller_index)
         self.hkl_spacing = hkl_spacing
@@ -305,7 +307,7 @@ class Grain:
     @property
     def lattice(self) -> Lattice:
         """The lattice of the grain (before repair or symmetrize)."""
-        h = self.thickness + 5.0
+        h = self.thickness + self.vacuum
         lattice = self.oriented_unit_cell.lattice.matrix.copy()
         lattice[0] *= self.ab_scale[0]
         lattice[1] *= self.ab_scale[1]
@@ -476,6 +478,19 @@ class Grain:
     def orthogonal_c(self, b: bool):
         """Sets whether to orthogonalise the c-vector."""
         self._orth_c = bool(b)
+
+    @property
+    def vacuum(self) -> float:
+        "The vacuum distance to add when showing the grain."
+        try:
+            return self._vacuum
+        except AttributeError:
+            self._vacuum = 5.0
+            return self._vacuum
+
+    @vacuum.setter
+    def vacuum(self, v: float):
+        self._vacuum = float(v)
 
     def can_symmetrize_surfaces(self, set_symmetrize: bool = False) -> bool:
         """Checks if the surfaces of the Grain can be symmetrized.
